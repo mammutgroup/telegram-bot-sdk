@@ -52,24 +52,27 @@ abstract class BaseObject extends Collection
      */
     public function mapRelatives()
     {
-        $relations = collect($this->relations());
+        $relations = $this->relations();
 
-        if ($relations->isEmpty()) {
+        if (empty($relations) || !is_array($relations)) {
             return false;
         }
 
-        return $this->items = collect($this->all())
-            ->map(function ($value, $key) use ($relations) {
-
-                if ($relations->has($key)) {
-                    $className = $relations->get($key);
-
-                    return new $className($value);
+        $results = $this->all();
+        foreach ($results as $key => $data) {
+            foreach ($relations as $property => $class) {
+                if (!is_object($data) && isset($results[$key][$property])) {
+                    $results[$key][$property] = new $class($results[$key][$property]);
+                    continue;
                 }
 
-                return $value;
-            })
-            ->all();
+                if ($key === $property) {
+                    $results[$key] = new $class($results[$key]);
+                }
+            }
+        }
+
+        return $this->items = $results;
     }
 
     /**

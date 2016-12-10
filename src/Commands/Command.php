@@ -2,7 +2,6 @@
 
 namespace Telegram\Bot\Commands;
 
-use Telegram\Bot\Answers\Answerable;
 use Telegram\Bot\Api;
 use Telegram\Bot\Objects\Update;
 
@@ -20,10 +19,8 @@ use Telegram\Bot\Objects\Update;
  * @method mixed replyWithLocation($use_sendLocation_parameters)     Reply Chat with a Location. You can use all the sendLocation() parameters except chat_id.
  * @method mixed replyWithChatAction($use_sendChatAction_parameters) Reply Chat with a Chat Action. You can use all the sendChatAction() parameters except chat_id.
  */
-abstract class Command implements CommandInterface
+abstract class Command extends CommandHelper implements CommandInterface
 {
-    use Answerable;
-
     /**
      * The name of the Telegram command.
      * Ex: help - Whenever the user sends /help, this would be resolved.
@@ -33,22 +30,24 @@ abstract class Command implements CommandInterface
     protected $name;
 
     /**
-     * Command Aliases
-     * Helpful when you want to trigger command with more than one name.
-     *
-     * @var array
-     */
-    protected $aliases = [];
-
-    /**
      * @var string The Telegram command description.
      */
     protected $description;
 
     /**
+     * @var Api Holds the Super Class Instance.
+     */
+    protected $telegram;
+
+    /**
      * @var string Arguments passed to the command.
      */
     protected $arguments;
+
+    /**
+     * @var Update Holds an Update object.
+     */
+    protected $update;
 
     /**
      * Get Command Name.
@@ -58,16 +57,6 @@ abstract class Command implements CommandInterface
     public function getName()
     {
         return $this->name;
-    }
-
-    /**
-     * Get Command Aliases
-     *
-     * @return array
-     */
-    public function getAliases()
-    {
-        return $this->aliases;
     }
 
     /**
@@ -109,6 +98,26 @@ abstract class Command implements CommandInterface
     }
 
     /**
+     * Returns Telegram Instance.
+     *
+     * @return Api
+     */
+    public function getTelegram()
+    {
+        return $this->telegram;
+    }
+
+    /**
+     * Returns Original Update.
+     *
+     * @return Update
+     */
+    public function getUpdate()
+    {
+        return $this->update;
+    }
+
+    /**
      * Get Arguments passed to the command.
      *
      * @return string
@@ -129,15 +138,20 @@ abstract class Command implements CommandInterface
     }
 
     /**
-     * @inheritDoc
+     * {@inheritdoc}
      */
-    public function make(Api $telegram, $arguments, Update $update)
+    public function make($telegram, $arguments, $update)
     {
         $this->telegram = $telegram;
         $this->arguments = $arguments;
         $this->update = $update;
+        $replayHandle = $telegram->replayHandle;
+        if ($replayHandle == true) {
+            return $this->replyHandle($arguments);
+        } else {
+            return $this->handle($arguments);
+        }
 
-        return $this->handle($arguments);
     }
 
     /**
@@ -157,4 +171,37 @@ abstract class Command implements CommandInterface
      * {@inheritdoc}
      */
     abstract public function handle($arguments);
+
+    /**
+     * {@inheritdoc}
+     */
+    abstract public function replyHandle($arguments);
+
+    /**
+     * Magic Method to handle all ReplyWith Methods.
+     *
+     * @param $method
+     * @param $arguments
+     *
+     * @return mixed|string
+     */
+    public function __call($method, $arguments)
+    {
+        $action = substr($method, 0, 9);
+        if ($action === 'replyWith') {
+            $reply_name = studly_case(substr($method, 9));
+            $methodName = 'send'.$reply_name;
+
+            if (!method_exists($this->telegram, $methodName)) {
+                return 'Method Not Found';
+            }
+
+            $chat_id = $this->update->getMessage()->getChat()->getId();
+            $params = array_merge(compact('chat_id'), $arguments[0]);
+
+            return call_user_func_array([$this->telegram, $methodName], [$params]);
+        }
+
+        return 'Method Not Found';
+    }
 }
